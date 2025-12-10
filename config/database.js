@@ -29,7 +29,46 @@ export const initDatabase = async () => {
     db = new SQL.Database();
   }
 
+  // Run migrations for existing database
+  await runMigrations();
+
   return db;
+};
+
+// Run migrations to add new columns
+const runMigrations = async () => {
+  if (!db) return;
+
+  const columnsToAdd = [
+    { table: 'claims', name: 'bank_name', type: 'TEXT' },
+    { table: 'claims', name: 'bank_branch', type: 'TEXT' },
+    { table: 'claims', name: 'account_number', type: 'TEXT' },
+    { table: 'claims', name: 'account_holder_name', type: 'TEXT' },
+    { table: 'claims', name: 'hospital_name', type: 'TEXT' },
+    { table: 'claims', name: 'treatment_description', type: 'TEXT' },
+    { table: 'claims', name: 'estimated_cost', type: 'REAL' },
+    { table: 'claims', name: 'transfer_proof_path', type: 'TEXT' },
+    { table: 'claims', name: 'transfer_amount', type: 'REAL' },
+    { table: 'claims', name: 'transfer_date', type: 'TEXT' },
+    { table: 'claims', name: 'transfer_notes', type: 'TEXT' }
+  ];
+
+  for (const column of columnsToAdd) {
+    try {
+      // Check if column exists
+      const tableInfo = db.exec(`PRAGMA table_info(${column.table})`);
+      const existingColumns = tableInfo[0]?.values.map(row => row[1]) || [];
+      
+      if (!existingColumns.includes(column.name)) {
+        db.run(`ALTER TABLE ${column.table} ADD COLUMN ${column.name} ${column.type}`);
+        console.log(`✅ Migration: Added column '${column.name}' to '${column.table}' table`);
+      }
+    } catch (error) {
+      // Table might not exist yet, which is fine
+    }
+  }
+
+  saveDatabase();
 };
 
 // Save database to file

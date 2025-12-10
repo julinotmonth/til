@@ -36,6 +36,17 @@ const init = async () => {
       incident_description TEXT NOT NULL,
       vehicle_type TEXT,
       vehicle_number TEXT,
+      bank_name TEXT,
+      bank_branch TEXT,
+      account_number TEXT,
+      account_holder_name TEXT,
+      hospital_name TEXT,
+      treatment_description TEXT,
+      estimated_cost REAL,
+      transfer_proof_path TEXT,
+      transfer_amount REAL,
+      transfer_date TEXT,
+      transfer_notes TEXT,
       status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'verified', 'processing', 'approved', 'rejected', 'completed')),
       admin_notes TEXT,
       submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -43,6 +54,37 @@ const init = async () => {
       FOREIGN KEY (user_id) REFERENCES users(id)
     )
   `);
+
+  // Migration: Add new columns to existing claims table if they don't exist
+  const columnsToAdd = [
+    { name: 'bank_name', type: 'TEXT' },
+    { name: 'bank_branch', type: 'TEXT' },
+    { name: 'account_number', type: 'TEXT' },
+    { name: 'account_holder_name', type: 'TEXT' },
+    { name: 'hospital_name', type: 'TEXT' },
+    { name: 'treatment_description', type: 'TEXT' },
+    { name: 'estimated_cost', type: 'REAL' }
+  ];
+
+  // Check existing columns in claims table
+  try {
+    const tableInfo = db.exec("PRAGMA table_info(claims)");
+    const existingColumns = tableInfo[0]?.values.map(row => row[1]) || [];
+    
+    for (const column of columnsToAdd) {
+      if (!existingColumns.includes(column.name)) {
+        try {
+          db.run(`ALTER TABLE claims ADD COLUMN ${column.name} ${column.type}`);
+          console.log(`✅ Added column '${column.name}' to claims table`);
+        } catch (alterError) {
+          // Column might already exist, ignore error
+          console.log(`ℹ️  Column '${column.name}' already exists or cannot be added`);
+        }
+      }
+    }
+  } catch (error) {
+    console.log('ℹ️  Migration check completed');
+  }
 
   // Create Claim Documents table
   db.run(`

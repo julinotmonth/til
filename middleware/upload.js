@@ -55,6 +55,8 @@ export const uploadClaimDocuments = upload.fields([
   { name: 'medicalReportFile', maxCount: 1 }
 ]);
 
+export const uploadTransferProof = upload.single('transferProof');
+
 export const uploadVerificationDocuments = upload.fields([
   { name: 'ktpFile', maxCount: 1 },
   { name: 'policeReportFile', maxCount: 1 },

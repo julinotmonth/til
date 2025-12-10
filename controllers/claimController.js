@@ -13,13 +13,23 @@ export const createClaim = (req, res) => {
     const {
       fullName, nik, phone, address,
       incidentDate, incidentTime, incidentLocation, incidentDescription,
-      vehicleType, vehicleNumber
+      vehicleType, vehicleNumber,
+      bankName, bankBranch, accountNumber, accountHolderName,
+      hospitalName, treatmentDescription, estimatedCost
     } = req.body;
 
     if (!fullName || !nik || !phone || !address || !incidentDate || !incidentLocation || !incidentDescription) {
       return res.status(400).json({
         success: false,
         message: 'Mohon lengkapi semua field yang wajib diisi'
+      });
+    }
+
+    // Validate bank information
+    if (!bankName || !accountNumber || !accountHolderName) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informasi rekening bank wajib diisi (nama bank, nomor rekening, nama pemilik rekening)'
       });
     }
 
@@ -38,12 +48,17 @@ export const createClaim = (req, res) => {
       INSERT INTO claims (
         id, user_id, full_name, nik, phone, address,
         incident_date, incident_time, incident_location, incident_description,
-        vehicle_type, vehicle_number, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+        vehicle_type, vehicle_number,
+        bank_name, bank_branch, account_number, account_holder_name,
+        hospital_name, treatment_description, estimated_cost,
+        status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
     `, [
       claimId, userId, fullName, nik, phone, address,
       incidentDate, incidentTime || null, incidentLocation, incidentDescription,
-      vehicleType || null, vehicleNumber || null
+      vehicleType || null, vehicleNumber || null,
+      bankName, bankBranch || null, accountNumber, accountHolderName,
+      hospitalName || null, treatmentDescription || null, estimatedCost ? parseFloat(estimatedCost) : null
     ]);
 
     const documentTypes = {
@@ -304,6 +319,77 @@ export const getClaimDocument = (req, res) => {
     res.sendFile(path.resolve(document.file_path));
   } catch (error) {
     console.error('Get claim document error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server'
+    });
+  }
+};
+
+// Upload bukti transfer oleh admin
+export const uploadTransferProof = (req, res) => {
+  try {
+    const { id } = req.params;
+    const { transferAmount, transferDate, transferNotes } = req.body;
+
+    const claim = getOne('SELECT * FROM claims WHERE id = ?', [id]);
+    if (!claim) {
+      return res.status(404).json({
+        success: false,
+        message: 'Klaim tidak ditemukan'
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Bukti transfer wajib diupload'
+      });
+    }
+
+    // Convert absolute path to relative path
+    const relativePath = req.file.path.split('uploads').pop();
+    const filePath = 'uploads' + relativePath.replace(/\\/g, '/');
+
+    const db = getDb();
+
+    // Update claim with transfer proof
+    db.run(`
+      UPDATE claims SET 
+        transfer_proof_path = ?,
+        transfer_amount = ?,
+        transfer_date = ?,
+        transfer_notes = ?,
+        status = 'completed',
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [
+      filePath,
+      transferAmount ? parseFloat(transferAmount) : null,
+      transferDate || new Date().toISOString().split('T')[0],
+      transferNotes || null,
+      id
+    ]);
+
+    // Add to timeline
+    db.run(`
+      INSERT INTO claim_timeline (claim_id, status, description)
+      VALUES (?, 'Selesai', 'Dana santunan telah ditransfer ke rekening penerima')
+    `, [id]);
+
+    saveDatabase();
+
+    res.json({
+      success: true,
+      message: 'Bukti transfer berhasil diupload',
+      data: {
+        transferProofPath: filePath,
+        transferAmount,
+        transferDate
+      }
+    });
+  } catch (error) {
+    console.error('Upload transfer proof error:', error);
     res.status(500).json({
       success: false,
       message: 'Terjadi kesalahan server'
