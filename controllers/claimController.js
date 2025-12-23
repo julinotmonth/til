@@ -40,6 +40,13 @@ export const createClaim = (req, res) => {
       });
     }
 
+    if (!req.files?.bankBookFile) {
+      return res.status(400).json({
+        success: false,
+        message: 'Foto/Scan Buku Tabungan wajib diupload'
+      });
+    }
+
     const claimId = generateClaimId();
     const userId = req.user?.id || null;
     const db = getDb();
@@ -65,7 +72,8 @@ export const createClaim = (req, res) => {
       ktpFile: 'ktp',
       policeReportFile: 'police_report',
       stnkFile: 'stnk',
-      medicalReportFile: 'medical_report'
+      medicalReportFile: 'medical_report',
+      bankBookFile: 'bank_book'
     };
 
     for (const [fieldName, docType] of Object.entries(documentTypes)) {

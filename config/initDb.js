@@ -91,7 +91,7 @@ const init = async () => {
     CREATE TABLE IF NOT EXISTS claim_documents (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       claim_id TEXT NOT NULL,
-      document_type TEXT NOT NULL CHECK(document_type IN ('ktp', 'police_report', 'stnk', 'medical_report')),
+      document_type TEXT NOT NULL CHECK(document_type IN ('ktp', 'police_report', 'stnk', 'medical_report', 'bank_book')),
       file_name TEXT NOT NULL,
       file_path TEXT NOT NULL,
       file_size INTEGER,
@@ -100,6 +100,46 @@ const init = async () => {
       FOREIGN KEY (claim_id) REFERENCES claims(id) ON DELETE CASCADE
     )
   `);
+
+  // Migration: Recreate claim_documents table to add 'bank_book' to CHECK constraint
+  try {
+    const tableCheck = db.exec("SELECT sql FROM sqlite_master WHERE type='table' AND name='claim_documents'");
+    if (tableCheck[0]?.values[0]?.[0] && !tableCheck[0].values[0][0].includes('bank_book')) {
+      console.log('🔄 Migrating claim_documents table to support bank_book...');
+      
+      // Rename old table
+      db.run(`ALTER TABLE claim_documents RENAME TO claim_documents_old`);
+      
+      // Create new table with updated constraint
+      db.run(`
+        CREATE TABLE claim_documents (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          claim_id TEXT NOT NULL,
+          document_type TEXT NOT NULL CHECK(document_type IN ('ktp', 'police_report', 'stnk', 'medical_report', 'bank_book')),
+          file_name TEXT NOT NULL,
+          file_path TEXT NOT NULL,
+          file_size INTEGER,
+          mime_type TEXT,
+          uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (claim_id) REFERENCES claims(id) ON DELETE CASCADE
+        )
+      `);
+      
+      // Copy data from old table
+      db.run(`
+        INSERT INTO claim_documents (id, claim_id, document_type, file_name, file_path, file_size, mime_type, uploaded_at)
+        SELECT id, claim_id, document_type, file_name, file_path, file_size, mime_type, uploaded_at
+        FROM claim_documents_old
+      `);
+      
+      // Drop old table
+      db.run(`DROP TABLE claim_documents_old`);
+      
+      console.log('✅ claim_documents table migrated successfully');
+    }
+  } catch (migrationError) {
+    console.log('ℹ️  claim_documents migration check completed');
+  }
 
   // Create Claim Timeline table
   db.run(`
