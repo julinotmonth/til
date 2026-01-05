@@ -1,6 +1,7 @@
 import { getOne, getAll, getDb, saveDatabase } from '../config/database.js';
 import path from 'path';
 import fs from 'fs';
+import { createNotification, notificationTypes, getNotificationMessage } from './Notificationcontroller.js';
 
 const generateClaimId = () => {
   const year = new Date().getFullYear();
@@ -96,6 +97,12 @@ export const createClaim = (req, res) => {
     `, [claimId]);
 
     saveDatabase();
+
+    // Create notification for user if logged in
+    if (userId) {
+      const notifData = getNotificationMessage(notificationTypes.CLAIM_SUBMITTED, { claimId });
+      createNotification(userId, notificationTypes.CLAIM_SUBMITTED, notifData.title, notifData.message, claimId);
+    }
 
     res.status(201).json({
       success: true,
@@ -257,6 +264,26 @@ export const updateClaimStatus = (req, res) => {
     `, [id, status.charAt(0).toUpperCase() + status.slice(1), statusDescriptions[status]]);
 
     saveDatabase();
+
+    // Create notification for user if claim has user_id
+    if (claim.user_id) {
+      const notifTypeMap = {
+        verified: notificationTypes.CLAIM_VERIFIED,
+        processing: notificationTypes.CLAIM_PROCESSING,
+        approved: notificationTypes.CLAIM_APPROVED,
+        rejected: notificationTypes.CLAIM_REJECTED,
+        completed: notificationTypes.CLAIM_COMPLETED
+      };
+
+      const notifType = notifTypeMap[status];
+      if (notifType) {
+        const notifData = getNotificationMessage(notifType, { 
+          claimId: id, 
+          reason: adminNotes 
+        });
+        createNotification(claim.user_id, notifType, notifData.title, notifData.message, id);
+      }
+    }
 
     res.json({
       success: true,

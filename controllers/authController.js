@@ -14,10 +14,35 @@ export const register = async (req, res) => {
   try {
     const { name, email, password, phone } = req.body;
 
-    if (!name || !email || !password) {
+    // Validasi field wajib (email sekarang opsional)
+    if (!name || !password || !phone) {
       return res.status(400).json({
         success: false,
-        message: 'Nama, email, dan password wajib diisi'
+        message: 'Nama, No. Telepon, dan password wajib diisi'
+      });
+    }
+
+    // Validasi format No. Telepon
+    const phoneRegex = /^(\+62|62|0)8[1-9][0-9]{6,10}$/;
+    if (!phoneRegex.test(phone)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Format No. Telepon tidak valid'
+      });
+    }
+
+    // Validasi password yang lebih ketat
+    if (!/^[A-Z]/.test(password)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password harus diawali dengan huruf kapital'
+      });
+    }
+
+    if (!/[a-zA-Z]/.test(password)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password harus mengandung huruf'
       });
     }
 
@@ -28,11 +53,30 @@ export const register = async (req, res) => {
       });
     }
 
-    const existingUser = getOne('SELECT id FROM users WHERE email = ?', [email]);
-    if (existingUser) {
+    if (password.length > 10) {
       return res.status(400).json({
         success: false,
-        message: 'Email sudah terdaftar'
+        message: 'Password maksimal 10 karakter'
+      });
+    }
+
+    // Cek jika email sudah terdaftar (hanya jika email diisi)
+    if (email) {
+      const existingUserByEmail = getOne('SELECT id FROM users WHERE email = ?', [email]);
+      if (existingUserByEmail) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email sudah terdaftar'
+        });
+      }
+    }
+
+    // Cek jika No. Telepon sudah terdaftar
+    const existingUserByPhone = getOne('SELECT id FROM users WHERE phone = ?', [phone]);
+    if (existingUserByPhone) {
+      return res.status(400).json({
+        success: false,
+        message: 'No. Telepon sudah terdaftar'
       });
     }
 
@@ -41,11 +85,11 @@ export const register = async (req, res) => {
     
     db.run(
       `INSERT INTO users (name, email, password, phone, role) VALUES (?, ?, ?, ?, 'user')`,
-      [name, email, hashedPassword, phone || null]
+      [name, email || null, hashedPassword, phone]
     );
     saveDatabase();
 
-    const user = getOne('SELECT id, name, email, role FROM users WHERE email = ?', [email]);
+    const user = getOne('SELECT id, name, email, phone, role FROM users WHERE phone = ?', [phone]);
     const token = generateToken(user.id);
 
     res.status(201).json({
@@ -64,20 +108,41 @@ export const register = async (req, res) => {
 
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { identifier, password, email } = req.body;
+    
+    // Support both old (email) and new (identifier) format
+    const loginIdentifier = identifier || email;
 
-    if (!email || !password) {
+    if (!loginIdentifier || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Email dan password wajib diisi'
+        message: 'Email/No. Telepon dan password wajib diisi'
       });
     }
 
-    const user = getOne('SELECT * FROM users WHERE email = ?', [email]);
+    // Cek apakah identifier adalah email atau nomor telepon
+    const emailRegex = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
+    const phoneRegex = /^(\+62|62|0)8[1-9][0-9]{6,10}$/;
+    
+    let user;
+    
+    if (emailRegex.test(loginIdentifier)) {
+      // Login dengan email
+      user = getOne('SELECT * FROM users WHERE email = ?', [loginIdentifier]);
+    } else if (phoneRegex.test(loginIdentifier)) {
+      // Login dengan nomor telepon
+      user = getOne('SELECT * FROM users WHERE phone = ?', [loginIdentifier]);
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'Format email atau nomor telepon tidak valid'
+      });
+    }
+    
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: 'Email atau password salah'
+        message: 'Akun tidak ditemukan'
       });
     }
 
@@ -85,7 +150,7 @@ export const login = async (req, res) => {
     if (!isValidPassword) {
       return res.status(401).json({
         success: false,
-        message: 'Email atau password salah'
+        message: 'Password salah'
       });
     }
 

@@ -11,6 +11,7 @@ import authRoutes from './routes/auth.js';
 import claimRoutes from './routes/claims.js';
 import verificationRoutes from './routes/verifications.js';
 import statsRoutes from './routes/stats.js';
+import notificationRoutes from './routes/Notificationroutes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,6 +35,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/claims', claimRoutes);
 app.use('/api/verifications', verificationRoutes);
 app.use('/api/stats', statsRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // API Welcome endpoint
 app.get('/api', (req, res) => {

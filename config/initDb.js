@@ -7,19 +7,61 @@ const init = async () => {
   await initDatabase();
   const db = getDb();
 
-  // Create Users table
+  // Create Users table (dengan email nullable dan phone NOT NULL)
   db.run(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
-      email TEXT UNIQUE NOT NULL,
+      email TEXT UNIQUE,
       password TEXT NOT NULL,
-      phone TEXT,
+      phone TEXT UNIQUE NOT NULL,
       role TEXT DEFAULT 'user' CHECK(role IN ('user', 'admin')),
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  // Migration: Recreate users table jika schema lama (email NOT NULL, phone nullable)
+  try {
+    const usersTableInfo = db.exec("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'");
+    const tableSchema = usersTableInfo[0]?.values[0]?.[0] || '';
+    
+    // Cek apakah perlu migrasi (email masih NOT NULL atau phone tidak NOT NULL)
+    if (tableSchema.includes('email TEXT UNIQUE NOT NULL') || !tableSchema.includes('phone TEXT UNIQUE NOT NULL')) {
+      console.log('🔄 Migrating users table (email → nullable, phone → NOT NULL)...');
+      
+      // Rename old table
+      db.run(`ALTER TABLE users RENAME TO users_old`);
+      
+      // Create new table dengan schema baru
+      db.run(`
+        CREATE TABLE users (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          email TEXT UNIQUE,
+          password TEXT NOT NULL,
+          phone TEXT UNIQUE NOT NULL,
+          role TEXT DEFAULT 'user' CHECK(role IN ('user', 'admin')),
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      
+      // Copy data from old table (gunakan email sebagai phone sementara jika phone kosong)
+      db.run(`
+        INSERT INTO users (id, name, email, password, phone, role, created_at, updated_at)
+        SELECT id, name, email, password, COALESCE(phone, '08' || SUBSTR(REPLACE(email, '@', ''), 1, 10)), role, created_at, updated_at
+        FROM users_old
+      `);
+      
+      // Drop old table
+      db.run(`DROP TABLE users_old`);
+      
+      console.log('✅ users table migrated successfully');
+    }
+  } catch (migrationError) {
+    console.log('ℹ️  users migration check completed:', migrationError.message);
+  }
 
   // Create Claims table
   db.run(`
@@ -186,37 +228,55 @@ const init = async () => {
     )
   `);
 
+  // Create Notifications table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      reference_id TEXT,
+      is_read INTEGER DEFAULT 0,
+      read_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
   // Create indexes
   db.run(`CREATE INDEX IF NOT EXISTS idx_claims_user_id ON claims(user_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_claims_status ON claims(status)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_claims_nik ON claims(nik)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_verifications_status ON verifications(status)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_verifications_nik ON verifications(nik)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON notifications(is_read)`);
 
   // Insert default admin user
-  const adminPassword = bcrypt.hashSync('admin123', 10);
-  const existingAdmin = getOne('SELECT id FROM users WHERE email = ?', ['admin@jasaraharja.co.id']);
+  const adminPassword = bcrypt.hashSync('Admin123', 10);
+  const existingAdmin = getOne('SELECT id FROM users WHERE email = ? OR phone = ?', ['admin@jasaraharja.co.id', '081000000001']);
   
   if (!existingAdmin) {
     db.run(
-      'INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
-      ['Administrator', 'admin@jasaraharja.co.id', adminPassword, 'admin']
+      'INSERT INTO users (name, email, password, phone, role) VALUES (?, ?, ?, ?, ?)',
+      ['Administrator', 'admin@jasaraharja.co.id', adminPassword, '081000000001', 'admin']
     );
-    console.log('✅ Admin user created (email: admin@jasaraharja.co.id, password: admin123)');
+    console.log('✅ Admin user created (email: admin@jasaraharja.co.id, phone: 081000000001, password: Admin123)');
   } else {
     console.log('ℹ️  Admin user already exists');
   }
 
   // Insert sample user
-  const userPassword = bcrypt.hashSync('user123', 10);
-  const existingUser = getOne('SELECT id FROM users WHERE email = ?', ['user@example.com']);
+  const userPassword = bcrypt.hashSync('User1234', 10);
+  const existingUser = getOne('SELECT id FROM users WHERE email = ? OR phone = ?', ['user@example.com', '081234567890']);
   
   if (!existingUser) {
     db.run(
       'INSERT INTO users (name, email, password, phone, role) VALUES (?, ?, ?, ?, ?)',
       ['John Doe', 'user@example.com', userPassword, '081234567890', 'user']
     );
-    console.log('✅ Sample user created (email: user@example.com, password: user123)');
+    console.log('✅ Sample user created (email: user@example.com, phone: 081234567890, password: User1234)');
   } else {
     console.log('ℹ️  Sample user already exists');
   }
